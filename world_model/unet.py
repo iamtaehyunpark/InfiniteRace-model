@@ -56,13 +56,15 @@ class ThinUNet(nn.Module):
     """Thin convolutional backbone wrapping the transformer bottleneck.
 
     All processing happens at the 32×32 latent spatial resolution.
-    The encoder increases channel depth through residual blocks,
-    the transformer performs cross-attention reasoning, and the
-    decoder projects back to the original latent channel count.
+    The encoder increases channel depth for the **warped frame** only
+    through residual blocks.  The **anchor** bypasses the encoder entirely
+    and enters the transformer at its raw VAE latent dimensionality (4ch).
+    The transformer performs cross-attention reasoning, and the decoder
+    projects back to the original latent channel count.
 
     Architecture:
-        Encoder: 4 → 64 → 128 → 256 → 512 (all at 32×32)
-        Bottleneck: TransformerBottleneck (d_model=512)
+        Encoder (warp only): 4 → 64 → 128 → 256 → 512 (all at 32×32)
+        Bottleneck: TransformerBottleneck (warp 512ch, anchor 4ch → d_model)
         Decoder: 512 → 256 → 128 → 64 → 4 (all at 32×32)
     """
 
@@ -82,8 +84,10 @@ class ThinUNet(nn.Module):
         self.enc_block3 = ResBlock(256, 512)
 
         # --- Transformer bottleneck ---
+        # Warp enters at 512ch (post-encoder), anchor enters raw at latent_channels
         self.bottleneck = TransformerBottleneck(
-            latent_channels=512,     # channel dim entering transformer
+            warp_channels=512,
+            anchor_channels=latent_channels,
             d_model=d_model,
             n_heads=n_heads,
             n_layers=n_layers,
@@ -103,20 +107,16 @@ class ThinUNet(nn.Module):
         adaln_params: list,    # [(scale, shift), ...] per layer
     ) -> Tensor:               # (B, 4, 32, 32)
 
-        # --- Encoder: channel expansion ---
+        # --- Encoder: channel expansion (warped frame only) ---
         h = self.enc_conv_in(z_warp)           # (B,  64, 32, 32)
         h = self.enc_block1(h)                 # (B, 128, 32, 32)
         h = self.enc_block2(h)                 # (B, 256, 32, 32)
         h_enc = self.enc_block3(h)             # (B, 512, 32, 32)
 
-        # Encode anchor through the same channel expansion path
-        a = self.enc_conv_in(z_anchor)
-        a = self.enc_block1(a)
-        a = self.enc_block2(a)
-        a_enc = self.enc_block3(a)             # (B, 512, 32, 32)
-
         # --- Transformer bottleneck ---
-        h_mid = self.bottleneck(h_enc, a_enc, pos_enc, adaln_params)  # (B, 512, 32, 32)
+        # Anchor bypasses encoder: raw z_anchor (4ch) goes directly to
+        # the transformer, which projects it to d_model via proj_in_anchor
+        h_mid = self.bottleneck(h_enc, z_anchor, pos_enc, adaln_params)  # (B, 512, 32, 32)
 
         # Residual connection around the bottleneck
         h_mid = h_mid + h_enc

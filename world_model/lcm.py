@@ -184,8 +184,11 @@ def lcm_consistency_loss(
         )
 
     # Consistency in latent space
+    # z_student needs grad to flow back to student model;
+    # z_teacher is detached (teacher is frozen)
+    z_student = model.vae.encode(pred_student)
+
     with torch.no_grad():
-        z_student = model.vae.encode(pred_student)
         z_teacher = model.vae.encode(pred_teacher)
 
     loss = F.mse_loss(z_student, z_teacher.detach())

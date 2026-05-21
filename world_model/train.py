@@ -184,6 +184,8 @@ def train(config: Optional[TrainConfig] = None):
 
         with autocast(enabled=config.mixed_precision):
             pred = model(cue1, cue2, pos_map, action)
+            # cue1 is the warped previous frame — used as the 'warp' reference
+            # for masked_l1_loss weighting (high weight where warp ≠ target)
             loss = training_loss(pred, target, cue1, lpips_fn, step)
 
         scaler.scale(loss).backward()

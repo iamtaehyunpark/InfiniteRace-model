@@ -87,27 +87,28 @@ class TestActionMLP:
 class TestTransformer:
 
     def test_shape(self):
-        B, C, H, W = 2, 4, 32, 32
+        B, H, W = 2, 32, 32
+        warp_ch, anchor_ch = 512, 4
         d_model, n_layers = 512, 2
 
         transformer = TransformerBottleneck(
-            latent_channels=C, d_model=d_model,
-            n_heads=4, n_layers=n_layers,
+            warp_channels=warp_ch, anchor_channels=anchor_ch,
+            d_model=d_model, n_heads=4, n_layers=n_layers,
         )
-        z_warp = torch.randn(B, C, H, W)
-        z_anchor = torch.randn(B, C, H, W)
+        z_warp = torch.randn(B, warp_ch, H, W)
+        z_anchor = torch.randn(B, anchor_ch, H, W)
         pos_enc = torch.randn(B, H * W, d_model)
         adaln_params = [(torch.randn(B, d_model), torch.randn(B, d_model))
                         for _ in range(n_layers)]
 
         out = transformer(z_warp, z_anchor, pos_enc, adaln_params)
-        assert out.shape == (B, C, H, W)
+        assert out.shape == (B, warp_ch, H, W)
 
     def test_gradient_flows(self):
         """Ensure gradients flow through the transformer."""
-        transformer = TransformerBottleneck(latent_channels=4, d_model=128,
-                                            n_heads=4, n_layers=1)
-        z_warp = torch.randn(1, 4, 8, 8, requires_grad=True)
+        transformer = TransformerBottleneck(warp_channels=128, anchor_channels=4,
+                                            d_model=128, n_heads=4, n_layers=1)
+        z_warp = torch.randn(1, 128, 8, 8, requires_grad=True)
         z_anchor = torch.randn(1, 4, 8, 8)
         pos_enc = torch.randn(1, 64, 128)
         adaln_params = [(torch.randn(1, 128), torch.randn(1, 128))]

@@ -67,7 +67,8 @@ class TransformerBottleneck(nn.Module):
 
     def __init__(
         self,
-        latent_channels: int = 4,
+        warp_channels: int = 512,
+        anchor_channels: int = 4,
         d_model: int = 512,
         n_heads: int = 4,
         n_layers: int = 2,
@@ -75,11 +76,14 @@ class TransformerBottleneck(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.n_layers = n_layers
+        self.warp_channels = warp_channels
+        self.anchor_channels = anchor_channels
 
-        # Project from latent channels to d_model and back
-        self.proj_in_warp = nn.Linear(latent_channels, d_model)
-        self.proj_in_anchor = nn.Linear(latent_channels, d_model)
-        self.proj_out = nn.Linear(d_model, latent_channels)
+        # Separate input projections: warp enters post-encoder (512ch),
+        # anchor enters raw from VAE (4ch)
+        self.proj_in_warp = nn.Linear(warp_channels, d_model)
+        self.proj_in_anchor = nn.Linear(anchor_channels, d_model)
+        self.proj_out = nn.Linear(d_model, warp_channels)
 
         self.layers = nn.ModuleList([
             _TransformerLayer(d_model, n_heads)
@@ -88,18 +92,19 @@ class TransformerBottleneck(nn.Module):
 
     def forward(
         self,
-        z_warp: Tensor,          # (B, 4, 32, 32)
-        z_anchor: Tensor,        # (B, 4, 32, 32)
+        z_warp: Tensor,          # (B, warp_channels, 32, 32) — post UNet encoder
+        z_anchor: Tensor,        # (B, anchor_channels, 32, 32) — raw VAE latent
         pos_enc: Tensor,         # (B, 1024, d_model)
         adaln_params: list,      # [(scale, shift), ...] per layer
-    ) -> Tensor:                 # (B, 4, 32, 32)
-        B, C, H, W = z_warp.shape
+    ) -> Tensor:                 # (B, warp_channels, 32, 32)
+        B, Cw, H, W = z_warp.shape
+        Ca = z_anchor.shape[1]
 
         # Flatten spatial → sequence: (B, C, H, W) → (B, H*W, C)
-        z_warp_flat = z_warp.permute(0, 2, 3, 1).reshape(B, H * W, C)
-        z_anchor_flat = z_anchor.permute(0, 2, 3, 1).reshape(B, H * W, C)
+        z_warp_flat = z_warp.permute(0, 2, 3, 1).reshape(B, H * W, Cw)
+        z_anchor_flat = z_anchor.permute(0, 2, 3, 1).reshape(B, H * W, Ca)
 
-        # Project to d_model
+        # Project to d_model (different input dims for warp vs anchor)
         z_warp_seq = self.proj_in_warp(z_warp_flat)      # (B, N, D)
         z_anchor_seq = self.proj_in_anchor(z_anchor_flat) # (B, N, D)
 
@@ -111,8 +116,8 @@ class TransformerBottleneck(nn.Module):
             scale, shift = adaln_params[i]
             z_warp_seq = layer(z_warp_seq, z_anchor_pos, scale, shift)
 
-        # Project back to latent channels and reshape
-        z_out = self.proj_out(z_warp_seq)                 # (B, N, C)
-        z_out = z_out.reshape(B, H, W, C).permute(0, 3, 1, 2)  # (B, C, H, W)
+        # Project back to warp channels and reshape
+        z_out = self.proj_out(z_warp_seq)                 # (B, N, Cw)
+        z_out = z_out.reshape(B, H, W, Cw).permute(0, 3, 1, 2)  # (B, Cw, H, W)
 
         return z_out

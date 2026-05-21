@@ -159,8 +159,9 @@ def distill(config: DistillConfig | None = None):
                 alphas_cumprod=alphas_cumprod,
             )
 
-            # Reconstruction loss to prevent collapse
-            pred_student = student(cue1, cue2, pos_map, action)
+            # Reconstruction loss to prevent collapse — clean forward pass
+            # (noise_level=0.0: no denoising, purely stabilisation signal)
+            pred_student = student(cue1, cue2, pos_map, action, noise_level=0.0)
             loss_recon = masked_l1_loss(pred_student, target, cue1)
 
             loss = loss_consistency + 0.5 * loss_recon
