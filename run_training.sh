@@ -86,8 +86,8 @@ OVERFIT_LOG="$LOG_DIR/overfit.log"
 rm -rf "$OVERFIT_DATA" "$OVERFIT_CKPT"
 mkdir -p "$OVERFIT_DATA" "$OVERFIT_CKPT"
 
-# Copy 10 random .npz files
-find "$DATA_DIR" -name "*.npz" | shuf | head -10 | xargs -I{} cp {} "$OVERFIT_DATA"
+# Copy 10 random .npz files (shuf -n avoids SIGPIPE under set -o pipefail)
+find "$DATA_DIR" -name "*.npz" | shuf -n 10 | xargs -I{} cp {} "$OVERFIT_DATA"
 echo "  Copied 10 samples to $OVERFIT_DATA"
 
 echo "  Training 500 steps on 10 samples ..."
