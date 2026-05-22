@@ -49,16 +49,19 @@ MAX_STEER  = 10.0           # degrees/frame at full steer (= action[2] = ±1)
 class PlayerState:
     """Minimal telemetry object accepted by CueEngine.update().
 
-    Field names match what CueEngine reads from the _Player in demo/main.py
-    (derived from DEMO_SPEC.md §8 and §3.2).
+    Field names match exactly what CueEngine reads from _Player in demo/main.py:
+      player.lat, .lon, .heading_deg, .elevation_deg, .speed_mps,
+      .delta_heading (degrees, no _deg suffix), .steer, .dx_m, .dy_m
     """
     lat: float
     lon: float
     heading_deg: float
     elevation_deg: float = 0.0
     speed_mps: float = MOVE_SPEED
-    delta_heading_deg: float = 0.0
+    delta_heading: float = 0.0   # degrees/frame — matches _Player.delta_heading
     steer: float = 0.0
+    dx_m: float = 0.0            # East displacement this frame (metres)
+    dy_m: float = 0.0            # North displacement this frame (metres)
 
     def step(self, turn_deg: float = 0.0, speed: Optional[float] = None) -> "PlayerState":
         """Return the next PlayerState after advancing one simulation tick."""
@@ -79,8 +82,10 @@ class PlayerState:
             heading_deg=new_heading,
             elevation_deg=self.elevation_deg,
             speed_mps=spd,
-            delta_heading_deg=delta,
+            delta_heading=delta,
             steer=steer,
+            dx_m=dist * math.sin(heading_rad),   # East
+            dy_m=dist * math.cos(heading_rad),   # North
         )
 
 
@@ -202,9 +207,14 @@ def _make_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _make_parser().parse_args()
 
-    # Deferred import — keeps this module importable in tests without demo/ present
+    # Deferred import — keeps this module importable in tests without demo/ present.
+    # demo/cue_engine.py uses bare imports (from config import ..., from utils import ...)
+    # so demo/ itself must be on sys.path, not just the repo root.
     try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        repo_dir = Path(__file__).resolve().parent
+        demo_dir = repo_dir / "demo"
+        sys.path.insert(0, str(demo_dir))    # resolves bare 'config' and 'utils' in demo/
+        sys.path.insert(0, str(repo_dir))    # resolves 'demo.loader', 'demo.cue_engine'
         from demo.loader import load_scene          # type: ignore[import]
         from demo.cue_engine import CueEngine       # type: ignore[import]
     except ImportError as exc:

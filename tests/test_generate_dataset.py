@@ -87,7 +87,7 @@ class TestPlayerStateStep:
         player = PlayerState(lat=0.0, lon=0.0, heading_deg=0.0)
         nxt = player.step(turn_deg=10.0)
         assert nxt.heading_deg == pytest.approx(10.0, abs=1e-9)
-        assert nxt.delta_heading_deg == pytest.approx(10.0, abs=1e-9)
+        assert nxt.delta_heading == pytest.approx(10.0, abs=1e-9)
 
     def test_heading_wraps_at_360(self):
         player = PlayerState(lat=0.0, lon=0.0, heading_deg=350.0)
@@ -148,7 +148,7 @@ class TestActionVectorNormalisation:
         player = PlayerState(lat=0.0, lon=0.0, heading_deg=0.0)
         nxt = player.step(turn_deg=0.0)
         assert nxt.steer == pytest.approx(0.0, abs=1e-9)
-        assert nxt.delta_heading_deg == pytest.approx(0.0, abs=1e-9)
+        assert nxt.delta_heading == pytest.approx(0.0, abs=1e-9)
 
 
 # ---------------------------------------------------------------------------
