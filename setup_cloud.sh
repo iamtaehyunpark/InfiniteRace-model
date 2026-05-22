@@ -11,6 +11,12 @@ echo "  InfiniteRace World Model — Cloud Setup"
 echo "  $(date)"
 echo "============================================================"
 
+# Fix DNS nameservers first
+echo "Fixing DNS configuration..."
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+echo "DNS configuration fixed."
+
 # ---------------------------------------------------------------------------
 # Step 1 — System packages
 # ---------------------------------------------------------------------------

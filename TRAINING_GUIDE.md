@@ -116,40 +116,43 @@ Navigate with WASD + mouse drag. Confirm:
 
 ## 2. Cloud Instance Setup (Vast.ai RTX 4090)
 
-### 2.1 Create instance
+### 2.1 Instance Details
+- **IP Address**: `213.181.123.72` (Port `22`)
+- **Instance ID**: `37302685`
+- **GPU**: RTX 4090 (24 GB VRAM)
+- **CUDA**: 12.6 (Confirmed working)
+- **Disk Space**: /workspace has 1.7TB free. **CRITICAL**: The container root partition is only 16GB. Work exclusively under `/workspace` to avoid running out of disk space.
 
-1. Go to [vast.ai](https://vast.ai) → **Search** tab
-2. Filter:
-   - GPU: **RTX 4090** (24 GB VRAM)
-   - CUDA: **12.x** (12.1 or 12.2 both work)
-   - Template: **PyTorch** (Ubuntu 22.04)
-   - Storage: **≥ 50 GB** (NVMe preferred)
-3. Sort by price, select → **Rent**
-4. Wait for **Running** status
+### 2.2 Connect and Resolve DNS
+DNS resolution on the container is broken by default and must be fixed first before any downloads (like pip packages or Hugging Face weights) can succeed.
 
-Verified working: instance type #9021757 (Iceland, $0.404/hr, CUDA 12.2, 135 GB NVMe).
+1. **SSH into the instance**:
+   ```bash
+   ssh root@213.181.123.72
+   ```
+2. **Fix DNS**:
+   Run these commands immediately after logging in:
+   ```bash
+   echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+   echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+   ```
+   *Note: This is also automated as the first step in `setup_cloud.sh`.*
 
-### 2.2 Connect and clone
+### 2.3 Verify and Complete Repo Clone
+The repository is already cloned at `/workspace/InfiniteRace-model` but may be partially cloned. Let's verify and complete it.
 
 ```bash
-# SSH in (exact command shown in Vast.ai UI → Instances → Connect)
-ssh root@<INSTANCE_IP> -p <PORT>
-
-# On the instance — clone directly from GitHub (no upload needed)
-cd /workspace
-git clone https://github.com/iamtaehyunpark/InfiniteRace-model.git
-cd InfiniteRace-model
+cd /workspace/InfiniteRace-model
+git status
+git pull
 ```
 
-### 2.3 Run setup
-
+### 2.4 Run Setup Script
+Run the setup script from the repository root:
 ```bash
 bash setup_cloud.sh
 ```
-
-This installs all dependencies, pre-downloads the SD VAE weights (~335 MB),
-and runs the test suite. Expect **60 passed, 1 skipped** (GPU speed test now runs).
-Takes ~8 minutes.
+This script fixes DNS (redundancy check), installs system packages (mesa GL, tmux, nvtop), installs PyTorch 2.3.0 + CUDA 12.1, installs python packages, pre-downloads the frozen SD VAE weights (~335 MB), and runs the test suite. Expect: `22 passed, 1 skipped` (GPU test passes, speed test skipped or passed).
 
 ---
 
@@ -280,7 +283,7 @@ a lower LR: `python3 -m world_model.distill --lr 1e-6 ...`.
 
 ```bash
 # From your local machine
-scp -P <PORT> root@<INSTANCE_IP>:/workspace/InfiniteRace-model/checkpoints/lcm_final.pt .
+scp root@213.181.123.72:/workspace/InfiniteRace-model/checkpoints/lcm_final.pt .
 ```
 
 **Destroy the instance immediately after** — Vast.ai: Instances → your instance → **Destroy**.
@@ -288,7 +291,7 @@ scp -P <PORT> root@<INSTANCE_IP>:/workspace/InfiniteRace-model/checkpoints/lcm_f
 Also download `level3_final.pt` if you want to re-run distillation later without
 re-training Level 3:
 ```bash
-scp -P <PORT> root@<INSTANCE_IP>:/workspace/InfiniteRace-model/checkpoints/level3_final.pt .
+scp root@213.181.123.72:/workspace/InfiniteRace-model/checkpoints/level3_final.pt .
 ```
 
 ---
