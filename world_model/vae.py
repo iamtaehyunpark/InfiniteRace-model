@@ -57,31 +57,41 @@ class VAE(nn.Module):
     # Public API
     # -----------------------------------------------------------------
 
+    def _move_to(self, device: torch.device) -> None:
+        """Ensure VAE is on the correct device after lazy load."""
+        if self.vae is not None and next(self.vae.parameters()).device != device:
+            self.vae = self.vae.to(device)
+
     def encode(self, x: Tensor) -> Tensor:
         """Encode pixel-space image to latent.
 
         Args:
-            x: (B, 3, H, W) float32 in [-1, 1]
+            x: (B, 3, H, W) float in [-1, 1]
 
         Returns:
-            z: (B, 4, H//8, W//8) float32
+            z: (B, 4, H//8, W//8) same dtype as input
         """
         self._ensure_loaded()
-        dist = self.vae.encode(x).latent_dist          # type: ignore[union-attr]
-        return dist.mean * _SD_SCALING_FACTOR
+        self._move_to(x.device)
+        # VAE weights stay float32; disable AMP so input dtype matches
+        with torch.autocast(device_type="cuda", enabled=False):
+            dist = self.vae.encode(x.float()).latent_dist  # type: ignore[union-attr]
+        return (dist.mean * _SD_SCALING_FACTOR).to(x.dtype)
 
     def decode(self, z: Tensor) -> Tensor:
         """Decode latent to pixel-space image.
 
         Args:
-            z: (B, 4, H//8, W//8) float32
+            z: (B, 4, H//8, W//8) float
 
         Returns:
-            x: (B, 3, H, W) float32 clamped to [-1, 1]
+            x: (B, 3, H, W) same dtype as input, clamped to [-1, 1]
         """
         self._ensure_loaded()
-        x = self.vae.decode(z / _SD_SCALING_FACTOR).sample  # type: ignore[union-attr]
-        return x.clamp(-1.0, 1.0)
+        self._move_to(z.device)
+        with torch.autocast(device_type="cuda", enabled=False):
+            x = self.vae.decode((z / _SD_SCALING_FACTOR).float()).sample  # type: ignore[union-attr]
+        return x.clamp(-1.0, 1.0).to(z.dtype)
 
     # Allow module to be moved to device before first forward
     def to(self, *args, **kwargs):

@@ -105,9 +105,10 @@ class InfiniteRaceWorldModel(nn.Module):
             z_warp, z_anchor, pos_enc_out, adaln_params,
         )                                          # (B, 4, 32, 32)
 
-        # 6. Decode to pixel space
-        with torch.no_grad():
-            out = self.vae.decode(z_out)           # (B, 3, 256, 256) [-1,1]
+        # 6. Decode to pixel space — no torch.no_grad() here so gradients
+        # flow back through z_out to the trainable UNet (VAE params are
+        # frozen via requires_grad_(False) so no VAE gradients accumulate)
+        out = self.vae.decode(z_out)               # (B, 3, 256, 256) [-1,1]
 
         return out
 
