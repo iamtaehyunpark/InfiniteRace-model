@@ -31,6 +31,8 @@ class TrainConfig:
     save_every: int = 5_000
     grad_clip: float = 1.0
     mixed_precision: bool = True
+    val_every: int = 1_000          # run validation every N steps (0 = disabled)
+    early_stop_patience: int = 0    # stop if val LPIPS doesn't improve for N steps (0 = disabled)
 
     def __post_init__(self):
         if self.model is None:

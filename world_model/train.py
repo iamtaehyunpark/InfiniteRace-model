@@ -45,6 +45,10 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--log_every", type=int, default=100)
     p.add_argument("--save_every", type=int, default=5_000)
+    p.add_argument("--val_every", type=int, default=1_000,
+                   help="Run validation every N steps and track best LPIPS (0 = disabled)")
+    p.add_argument("--early_stop_patience", type=int, default=0,
+                   help="Stop if val LPIPS hasn't improved for N steps (0 = disabled)")
     p.add_argument("--no_wandb", action="store_true")
     return p
 
@@ -125,6 +129,52 @@ def save_checkpoint(
     logger.info("Checkpoint saved: %s", path)
 
 
+@torch.no_grad()
+def _run_validation(
+    model: InfiniteRaceWorldModel,
+    val_loader: DataLoader,
+    lpips_fn: "PerceptualLoss",
+    device: torch.device,
+    mixed_precision: bool,
+    max_batches: int = 20,
+) -> float:
+    """Return mean LPIPS over up to max_batches validation batches."""
+    model.eval()
+    total, n = 0.0, 0
+    for i, batch in enumerate(val_loader):
+        if i >= max_batches:
+            break
+        cue1    = batch['cue1'].to(device)
+        cue2    = batch['cue2'].to(device)
+        pos_map = batch['pos_map'].permute(0, 2, 3, 1).to(device)
+        action  = batch['action'].to(device)
+        target  = batch['target'].to(device)
+        with autocast(enabled=mixed_precision):
+            pred = model(cue1, cue2, pos_map, action)
+            lp   = lpips_fn(pred, target)
+        total += lp.item()
+        n += 1
+    model.train()
+    return total / max(n, 1)
+
+
+def _save_best(
+    model: InfiniteRaceWorldModel,
+    optimizer: torch.optim.Optimizer,
+    step: int,
+    checkpoint_dir: str,
+) -> None:
+    ckpt_dir = Path(checkpoint_dir)
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    torch.save({
+        'step': step,
+        'config': model.config,
+        'unet': model.unet.state_dict(),
+        'action_mlp': model.action_mlp.state_dict(),
+        'optimizer': optimizer.state_dict(),
+    }, ckpt_dir / "best.pt")
+
+
 def train(config: Optional[TrainConfig] = None):
     """Main training loop."""
     if config is None:
@@ -140,7 +190,7 @@ def train(config: Optional[TrainConfig] = None):
     # Freeze VAE
     model.vae.requires_grad_(False)
 
-    # Dataset
+    # Dataset — train split
     dataset = StreetViewDataset(config.data_dir, split="train")
     loader = DataLoader(
         dataset,
@@ -151,6 +201,23 @@ def train(config: Optional[TrainConfig] = None):
         drop_last=True,
     )
     logger.info("Dataset: %d training samples", len(dataset))
+
+    # Validation split (used for early stopping)
+    val_dataset = StreetViewDataset(config.data_dir, split="val")
+    val_loader: Optional[DataLoader] = None
+    if len(val_dataset) > 0 and config.val_every > 0:
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=config.batch_size,
+            shuffle=False,
+            num_workers=2,
+            pin_memory=True,
+            drop_last=False,
+        )
+        logger.info("Validation: %d samples  (val_every=%d  patience=%d)",
+                    len(val_dataset), config.val_every, config.early_stop_patience)
+    else:
+        logger.info("Validation disabled (val_every=0 or no val samples)")
 
     # Optimizer — only trainable parameters
     trainable = [p for p in model.parameters() if p.requires_grad]
@@ -167,6 +234,10 @@ def train(config: Optional[TrainConfig] = None):
     # Logging
     use_wandb = True
     log_obj = _setup_logging(use_wandb, config)
+
+    # Early stopping state
+    best_val_lpips = float("inf")
+    steps_since_improvement = 0
 
     # Training loop
     step = 0
@@ -224,6 +295,39 @@ def train(config: Optional[TrainConfig] = None):
         if step % config.save_every == 0 and step > 0:
             save_checkpoint(model, optimizer, step, config.checkpoint_dir)
 
+        # Validation + early stopping
+        if (val_loader is not None
+                and config.val_every > 0
+                and step > 0
+                and step % config.val_every == 0):
+            val_lpips = _run_validation(
+                model, val_loader, lpips_fn, device, config.mixed_precision,
+            )
+            logger.info(
+                "step=%d  val_lpips=%.4f  best=%.4f  patience=%d/%d",
+                step, val_lpips, best_val_lpips,
+                steps_since_improvement,
+                config.early_stop_patience if config.early_stop_patience > 0 else -1,
+            )
+            _log_scalars(log_obj, step, {"val/lpips": val_lpips})
+
+            if val_lpips < best_val_lpips:
+                best_val_lpips = val_lpips
+                steps_since_improvement = 0
+                _save_best(model, optimizer, step, config.checkpoint_dir)
+                logger.info("  New best val LPIPS=%.4f — saved best.pt", val_lpips)
+            else:
+                steps_since_improvement += config.val_every
+                if (config.early_stop_patience > 0
+                        and steps_since_improvement >= config.early_stop_patience):
+                    logger.info(
+                        "Early stopping at step %d — val LPIPS hasn't improved "
+                        "for %d steps (best=%.4f, load best.pt for distillation)",
+                        step, config.early_stop_patience, best_val_lpips,
+                    )
+                    step += 1
+                    break
+
         step += 1
 
     # Final checkpoint
@@ -243,6 +347,8 @@ def main():
         checkpoint_dir=args.checkpoint_dir,
         log_every=args.log_every,
         save_every=args.save_every,
+        val_every=args.val_every,
+        early_stop_patience=args.early_stop_patience,
     )
 
     train(config)

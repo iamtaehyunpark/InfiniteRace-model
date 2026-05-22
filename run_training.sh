@@ -153,18 +153,26 @@ python3 -m world_model.train \
     --steps "$STEPS_L3" \
     --batch_size "$BATCH_L3" \
     --log_every 100 \
-    --save_every 5000 \
+    --save_every 2000 \
+    --val_every 1000 \
+    --early_stop_patience 3000 \
     --no_wandb \
     2>&1 | tee "$LOG_DIR/level3.log"
 
-# Find latest checkpoint and copy to level3_final.pt
-LATEST_CKPT=$(ls -t "$CKPT_DIR"/step_*.pt 2>/dev/null | head -1)
-if [[ -z "$LATEST_CKPT" ]]; then
-    echo "ERROR: No checkpoint found in $CKPT_DIR after Level 3 training."
-    exit 1
+# Prefer best.pt (saved by early stopping) over the latest periodic checkpoint
+if [[ -f "$CKPT_DIR/best.pt" ]]; then
+    cp "$CKPT_DIR/best.pt" "$CKPT_DIR/level3_final.pt"
+    echo "  Level 3 complete (early stopped). Using best val LPIPS checkpoint."
+else
+    LATEST_CKPT=$(ls -t "$CKPT_DIR"/step_*.pt 2>/dev/null | head -1)
+    if [[ -z "$LATEST_CKPT" ]]; then
+        echo "ERROR: No checkpoint found in $CKPT_DIR after Level 3 training."
+        exit 1
+    fi
+    cp "$LATEST_CKPT" "$CKPT_DIR/level3_final.pt"
+    echo "  Level 3 complete (ran to $STEPS_L3 steps, no early stop)."
 fi
-cp "$LATEST_CKPT" "$CKPT_DIR/level3_final.pt"
-echo "  Level 3 complete. Checkpoint: $CKPT_DIR/level3_final.pt"
+echo "  Checkpoint: $CKPT_DIR/level3_final.pt"
 
 # ---------------------------------------------------------------------------
 # Stage 4 — POC validation gate
