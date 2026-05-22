@@ -11,6 +11,7 @@ Each .npz contains one training sample with:
 import hashlib
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -62,16 +63,26 @@ class StreetViewDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         sample = np.load(self.files[idx])
 
-        warped = _bgr_to_rgb_norm(sample['warped_frame'])      # (3, 256, 256)
-        anchor = _bgr_to_rgb_norm(sample['anchor_crop'])       # (3, 256, 256)
-        target = _bgr_to_rgb_norm(sample['target_frame'])      # (3, 256, 256)
-        pos_map = sample['anchor_pos_map']                     # (256, 256, 2)
+        # Decode JPEG bytes if available, otherwise read raw BGR frames
+        if 'warped_frame_jpg' in sample:
+            warped_raw = cv2.imdecode(sample['warped_frame_jpg'], cv2.IMREAD_COLOR)
+            anchor_raw = cv2.imdecode(sample['anchor_crop_jpg'], cv2.IMREAD_COLOR)
+            target_raw = cv2.imdecode(sample['target_frame_jpg'], cv2.IMREAD_COLOR)
+        else:
+            warped_raw = sample['warped_frame']
+            anchor_raw = sample['anchor_crop']
+            target_raw = sample['target_frame']
+
+        warped = _bgr_to_rgb_norm(warped_raw)                  # (3, 256, 256)
+        anchor = _bgr_to_rgb_norm(anchor_raw)                  # (3, 256, 256)
+        target = _bgr_to_rgb_norm(target_raw)                  # (3, 256, 256)
+        pos_map = sample['anchor_pos_map']                     # (32, 32, 2) or (256, 256, 2)
         action = sample['action_vector_norm']                  # (3,)
 
-        # pos_map: store as (2, 256, 256) for DataLoader collation;
-        # model.forward re-permutes to (B, 256, 256, 2)
+        # pos_map: store as (2, H, W) for DataLoader collation;
+        # model.forward re-permutes to (B, H, W, 2)
         pos_map_chw = np.ascontiguousarray(
-            pos_map.transpose(2, 0, 1),                        # (2, 256, 256)
+            pos_map.transpose(2, 0, 1),
         )
 
         return {

@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import cv2
 import numpy as np
 
 # ---------------------------------------------------------------------------
@@ -305,15 +306,23 @@ def main() -> None:
                 skipped += 1
                 continue
 
-            out_path = out_dir / f"sample_{sample_counter:08d}.npz"
+            out_path = out_dir / f"sample_{args.seed}_{sample_counter:08d}.npz"
             try:
-                np.savez(
+                # Compress images to JPEG bytes (quality=90) to save space
+                _, warped_jpg = cv2.imencode('.jpg', cue_t.warped_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                _, anchor_jpg = cv2.imencode('.jpg', cue_t.anchor_crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                _, target_jpg = cv2.imencode('.jpg', cue_t1.anchor_crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+
+                # Downsample position map to 32x32 via slicing
+                pos_map_32 = cue_t.anchor_pos_map[::8, ::8, :]
+
+                np.savez_compressed(
                     out_path,
-                    warped_frame=cue_t.warped_frame,
-                    anchor_crop=cue_t.anchor_crop,
-                    anchor_pos_map=cue_t.anchor_pos_map,
+                    warped_frame_jpg=warped_jpg,
+                    anchor_crop_jpg=anchor_jpg,
+                    anchor_pos_map=pos_map_32,
                     action_vector_norm=cue_t.action_vector_norm,
-                    target_frame=cue_t1.anchor_crop,
+                    target_frame_jpg=target_jpg,
                 )
             except Exception as exc:
                 print(f"WARNING: Failed to save {out_path}: {exc}", file=sys.stderr)

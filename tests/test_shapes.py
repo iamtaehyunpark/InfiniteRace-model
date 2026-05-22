@@ -166,11 +166,13 @@ class _MockVAE(nn.Module):
 
     def encode(self, x):
         B, C, H, W = x.shape
-        return x[:, :4, :H//8, :W//8] if C >= 4 else torch.randn(B, 4, H//8, W//8)
+        if C >= 4:
+            return x[:, :4, :H//8, :W//8]
+        return torch.randn(B, 4, H//8, W//8, device=x.device, dtype=x.dtype)
 
     def decode(self, z):
         B, C, H, W = z.shape
-        return torch.randn(B, 3, H*8, W*8).clamp(-1, 1)
+        return torch.randn(B, 3, H*8, W*8, device=z.device, dtype=z.dtype).clamp(-1, 1)
 
     def to(self, *args, **kwargs):
         return self

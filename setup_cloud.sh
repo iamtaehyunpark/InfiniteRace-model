@@ -26,22 +26,48 @@ apt-get update -qq
 apt-get install -y --no-install-recommends \
     git \
     python3-pip \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     tmux \
     nvtop
 echo "      System packages installed."
 
 # ---------------------------------------------------------------------------
-# Step 2 — PyTorch 2.3.0 with CUDA 12.1
+# ---------------------------------------------------------------------------
+# Step 2 — Virtual Environment Setup & PyTorch 2.3.0 with CUDA 12.1
 # ---------------------------------------------------------------------------
 echo ""
-echo "[2/7] Installing PyTorch 2.3.0 (CUDA 12.1) ..."
-pip install --quiet \
-    torch==2.3.0 \
-    torchvision==0.18.0 \
-    --index-url https://download.pytorch.org/whl/cu121
-echo "      PyTorch installed."
+echo "[2/7] Setting up virtual environment and PyTorch 2.3.0 (CUDA 12.1) ..."
+
+# Set cache directories in /workspace to avoid filling root container partition
+export PIP_CACHE_DIR="/workspace/.pip_cache"
+export HF_HOME="/workspace/.hf_home"
+
+if [ -d "/venv/main" ]; then
+    echo "Using existing system virtual environment at /venv/main"
+    VENV_PATH="/venv/main"
+else
+    if [ ! -d "/workspace/venv" ]; then
+        echo "Creating virtual environment at /workspace/venv ..."
+        python3 -m venv /workspace/venv
+    fi
+    VENV_PATH="/workspace/venv"
+fi
+
+# Activate virtualenv
+source "$VENV_PATH/bin/activate"
+
+pip install --upgrade pip
+
+if [ "$VENV_PATH" = "/workspace/venv" ]; then
+    pip install --quiet \
+        torch==2.3.0 \
+        torchvision==0.18.0 \
+        --index-url https://download.pytorch.org/whl/cu121
+    echo "      PyTorch installed."
+else
+    echo "      Using pre-installed PyTorch in system environment."
+fi
 
 # ---------------------------------------------------------------------------
 # Step 3 — Python requirements
@@ -59,6 +85,7 @@ echo ""
 echo "[4/7] Pre-downloading Stable Diffusion VAE weights ..."
 echo "      (stabilityai/sd-vae-ft-mse — ~335 MB)"
 python3 - <<'PYEOF'
+import os
 from diffusers import AutoencoderKL
 print("  Downloading sd-vae-ft-mse ...")
 AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse")

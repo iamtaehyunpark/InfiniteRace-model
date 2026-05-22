@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import cv2
 import numpy as np
 import pytest
 
@@ -255,27 +256,27 @@ class TestTrajectoryLength:
 # ---------------------------------------------------------------------------
 
 REQUIRED_KEYS = {
-    "warped_frame",
-    "anchor_crop",
+    "warped_frame_jpg",
+    "anchor_crop_jpg",
     "anchor_pos_map",
     "action_vector_norm",
-    "target_frame",
+    "target_frame_jpg",
 }
 
 EXPECTED_SHAPES = {
-    "warped_frame":       (256, 256, 3),
-    "anchor_crop":        (256, 256, 3),
-    "anchor_pos_map":     (256, 256, 2),
+    "warped_frame_jpg":       (None,),
+    "anchor_crop_jpg":        (None,),
+    "anchor_pos_map":     (32, 32, 2),
     "action_vector_norm": (3,),
-    "target_frame":       (256, 256, 3),
+    "target_frame_jpg":       (None,),
 }
 
 EXPECTED_DTYPES = {
-    "warped_frame":       np.uint8,
-    "anchor_crop":        np.uint8,
+    "warped_frame_jpg":       np.uint8,
+    "anchor_crop_jpg":        np.uint8,
     "anchor_pos_map":     np.float32,
     "action_vector_norm": np.float32,
-    "target_frame":       np.uint8,
+    "target_frame_jpg":       np.uint8,
 }
 
 
@@ -296,13 +297,19 @@ class TestNpzKeys:
             cue_t1 = cue_history[i + 1]
             if _validate_cue_data(cue_t, f"step {i}") and cue_t1.anchor_crop is not None:
                 out = tmp_path / "sample_00000001.npz"
-                np.savez(
+                
+                _, warped_jpg = cv2.imencode('.jpg', cue_t.warped_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                _, anchor_jpg = cv2.imencode('.jpg', cue_t.anchor_crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                _, target_jpg = cv2.imencode('.jpg', cue_t1.anchor_crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                pos_map_32 = cue_t.anchor_pos_map[::8, ::8, :]
+
+                np.savez_compressed(
                     out,
-                    warped_frame=cue_t.warped_frame,
-                    anchor_crop=cue_t.anchor_crop,
-                    anchor_pos_map=cue_t.anchor_pos_map,
+                    warped_frame_jpg=warped_jpg,
+                    anchor_crop_jpg=anchor_jpg,
+                    anchor_pos_map=pos_map_32,
                     action_vector_norm=cue_t.action_vector_norm,
-                    target_frame=cue_t1.anchor_crop,
+                    target_frame_jpg=target_jpg,
                 )
                 return out
 
@@ -323,9 +330,12 @@ class TestNpzKeys:
         path = self._make_sample(tmp_path)
         loaded = np.load(path)
         for key, expected_shape in EXPECTED_SHAPES.items():
-            assert loaded[key].shape == expected_shape, (
-                f"Key '{key}': expected shape {expected_shape}, got {loaded[key].shape}"
-            )
+            if expected_shape == (None,):
+                assert len(loaded[key].shape) == 1
+            else:
+                assert loaded[key].shape == expected_shape, (
+                    f"Key '{key}': expected shape {expected_shape}, got {loaded[key].shape}"
+                )
 
     def test_dtypes_are_correct(self, tmp_path):
         path = self._make_sample(tmp_path)
@@ -352,7 +362,7 @@ class TestNpzKeys:
         assert item["cue1"].shape == (3, 256, 256)
         assert item["cue2"].shape == (3, 256, 256)
         assert item["target"].shape == (3, 256, 256)
-        assert item["pos_map"].shape == (2, 256, 256)
+        assert item["pos_map"].shape == (2, 32, 32)
         assert item["action"].shape == (3,)
         assert item["cue1"].dtype == torch.float32
 

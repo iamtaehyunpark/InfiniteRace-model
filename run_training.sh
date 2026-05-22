@@ -19,6 +19,18 @@
 #
 set -euo pipefail
 
+# Set cache directories in /workspace to avoid filling root container partition
+export HF_HOME="/workspace/.hf_home"
+
+# Activate virtual environment if it exists
+if [ -d "/venv/main" ]; then
+    echo "Activating virtual environment at /venv/main ..."
+    source /venv/main/bin/activate
+elif [ -d "/workspace/venv" ]; then
+    echo "Activating virtual environment at /workspace/venv ..."
+    source /workspace/venv/bin/activate
+fi
+
 # ---------------------------------------------------------------------------
 # User-configurable variables
 # ---------------------------------------------------------------------------
