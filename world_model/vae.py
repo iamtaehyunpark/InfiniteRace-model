@@ -74,7 +74,8 @@ class VAE(nn.Module):
         self._ensure_loaded()
         self._move_to(x.device)
         # VAE weights stay float32; disable AMP so input dtype matches
-        with torch.autocast(device_type="cuda", enabled=False):
+        dev = x.device.type if x.device.type in ("cuda",) else "cpu"
+        with torch.autocast(device_type=dev, enabled=False):
             dist = self.vae.encode(x.float()).latent_dist  # type: ignore[union-attr]
         return (dist.mean * _SD_SCALING_FACTOR).to(x.dtype)
 
@@ -89,7 +90,8 @@ class VAE(nn.Module):
         """
         self._ensure_loaded()
         self._move_to(z.device)
-        with torch.autocast(device_type="cuda", enabled=False):
+        dev = z.device.type if z.device.type in ("cuda",) else "cpu"
+        with torch.autocast(device_type=dev, enabled=False):
             x = self.vae.decode((z / _SD_SCALING_FACTOR).float()).sample  # type: ignore[union-attr]
         return x.clamp(-1.0, 1.0).to(z.dtype)
 

@@ -187,6 +187,17 @@ def train(config: Optional[TrainConfig] = None):
     # Model
     model = InfiniteRaceWorldModel(config.model).to(device)
 
+    # Load pretrained SD 1.5 UNet weights into ThinUNet before training
+    if config.model.unet_checkpoint:
+        from diffusers import UNet2DConditionModel
+        logger.info("Loading SD UNet pretrained weights from '%s'…", config.model.unet_checkpoint)
+        sd_unet = UNet2DConditionModel.from_pretrained(
+            config.model.unet_checkpoint, subfolder="unet",
+        )
+        loaded, skipped = model.unet.load_pretrained_partial(sd_unet.state_dict())
+        logger.info("  %d params loaded from SD UNet, %d skipped", len(loaded), len(skipped))
+        del sd_unet  # free VRAM immediately
+
     # Freeze VAE
     model.vae.requires_grad_(False)
 

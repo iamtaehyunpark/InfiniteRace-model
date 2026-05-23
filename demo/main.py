@@ -1,8 +1,10 @@
+import argparse
 import os
 import sys
 import math
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 import pygame
 
@@ -80,6 +82,21 @@ class _Player:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, default=None,
+                        help="Path to lcm_final.pt. If omitted, shows cue panel only.")
+    parser.add_argument("--steps", type=int, default=1,
+                        help="LCM inference steps (default 1 for CPU speed)")
+    args = parser.parse_args()
+
+    # Auto-detect checkpoint in repo root if not specified
+    if args.model is None:
+        default_ckpt = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "lcm_final.pt"
+        )
+        if os.path.isfile(default_ckpt):
+            args.model = default_ckpt
+
     folder_path = DATA_FOLDER
     if not os.path.isdir(folder_path):
         print(f"Error: '{folder_path}' is not a valid directory")
@@ -112,26 +129,56 @@ def main() -> None:
     player     = _Player(nodes[0].lat, nodes[0].lon)
     gsv_surf   = screen.subsurface(pygame.Rect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT))
 
+    wm_interface = None
+    if args.model:
+        try:
+            from world_model.queue_interface import WorldModelInterface
+            wm_output_surf = screen.subsurface(
+                pygame.Rect(WINDOW_WIDTH - 256, 0, 256, 256)  # top-right, clear of minimap
+            )
+            wm_interface = WorldModelInterface(
+                model_checkpoint=args.model,
+                display_surface=wm_output_surf,
+                steps=args.steps,
+            )
+            print(f"World model loaded: {args.model}  (steps={args.steps})")
+        except Exception as e:
+            print(f"World model load failed: {e} — running without model")
+
     if len(nodes) >= 2:
         viewer.heading_deg = bearing_between(
             nodes[0].lat, nodes[0].lon, nodes[1].lat, nodes[1].lon,
         )
 
+    try:
+     _run_loop(screen, clock, fps_font, viewer, minimap, cue_engine, cue_panel,
+               player, gsv_surf, nodes, wm_interface)
+    finally:
+        if wm_interface is not None:
+            wm_interface.stop()
+        pygame.quit()
+
+
+def _run_loop(screen, clock, fps_font, viewer, minimap, cue_engine, cue_panel,
+              player, gsv_surf, nodes, wm_interface):
+    from config import (
+        WINDOW_WIDTH, WINDOW_HEIGHT, YAW_SENS, PITCH_SENS, PITCH_LIMIT,
+        ELEVATION_RATE, FOV_DEG, TARGET_FPS,
+    )
     dragging   = False
     drag_start = (0, 0)
     drag_moved = False
-
     while True:
         dt        = clock.tick(TARGET_FPS) / 1000.0
         mouse_pos = pygame.mouse.get_pos()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit(); return
+                return
 
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    pygame.quit(); return
+                    return
                 elif event.key == pygame.K_r:
                     viewer.heading_deg = 0.0
                     viewer.pitch_deg   = 0.0
@@ -196,6 +243,10 @@ def main() -> None:
 
         # Cue panel side
         cue_panel.render(screen, cue_data)
+
+        # World model — send cues and blit latest keyframe (bottom-right overlay)
+        if wm_interface is not None:
+            wm_interface.send(cue_data)
 
         # Divider
         pygame.draw.line(screen, (60, 60, 80),

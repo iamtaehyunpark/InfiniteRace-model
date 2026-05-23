@@ -1,4 +1,4 @@
-__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -7,11 +7,19 @@ __pycache__/
 dist/
 build/
 
+# Model checkpoints
+*.pt
+*.ckpt
+*.safetensors
+
 # Training artifacts (generated on cloud, not tracked)
 training_data/
 checkpoints/
 logs/
-/tmp/
+
+# Local demo data and cache
+gsv_data/
+.tile_cache/
 
 # IDE
 .vscode/

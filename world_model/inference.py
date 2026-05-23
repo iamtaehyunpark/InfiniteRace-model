@@ -101,7 +101,9 @@ class WorldModelRunner(threading.Thread):
                 continue
 
             try:
-                with torch.inference_mode(), torch.cuda.amp.autocast(enabled=True):
+                amp_dtype = torch.float16 if device.type == 'cuda' else torch.bfloat16
+                amp_enabled = device.type in ('cuda', 'mps')
+                with torch.inference_mode(), torch.amp.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
                     cue1 = normalize(packet['cue1']).to(device)
                     cue2 = normalize(packet['cue2']).to(device)
                     pos_map = (

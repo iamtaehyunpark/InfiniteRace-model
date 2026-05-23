@@ -88,8 +88,9 @@ def distill(config: DistillConfig | None = None):
     student = InfiniteRaceWorldModel.load(config.checkpoint, device=str(device))
     student.train()
 
-    # Create teacher as frozen EMA copy
+    # Create teacher as frozen EMA copy — share the frozen VAE to save ~332 MB VRAM
     teacher = copy.deepcopy(student)
+    teacher.vae = student.vae   # both are frozen; no need for two copies on GPU
     teacher.eval()
     for param in teacher.parameters():
         param.requires_grad_(False)

@@ -46,12 +46,16 @@ class WorldModelInterface:
         self.wm_queue = Queue(maxsize=queue_maxsize)
         self.jitter_buffer = JitterBuffer(maxlen=jitter_maxlen)
 
-        # Load model
-        model = InfiniteRaceWorldModel.load(model_checkpoint)
-        if hasattr(model, 'cuda'):
-            import torch
-            if torch.cuda.is_available():
-                model = model.cuda()
+        # Load model — pick best available device
+        import torch
+        if torch.cuda.is_available():
+            device = 'cuda'
+        elif torch.backends.mps.is_available():
+            device = 'mps'
+        else:
+            device = 'cpu'
+        model = InfiniteRaceWorldModel.load(model_checkpoint, device=device)
+        logger.info("WorldModelInterface using device: %s", device)
 
         self.runner = WorldModelRunner(
             model=model,

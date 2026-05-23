@@ -41,7 +41,7 @@ CKPT_DIR="${CKPT_DIR:-checkpoints/}"
 STEPS_L3="${STEPS_L3:-50000}"
 STEPS_L4="${STEPS_L4:-20000}"
 BATCH_L3="${BATCH_L3:-4}"
-BATCH_L4="${BATCH_L4:-8}"
+BATCH_L4="${BATCH_L4:-2}"
 SKIP_L2="${SKIP_L2:-1}"   # 1 = skip Level 2 (default); 0 = run Level 2
 
 LOG_DIR="logs/"
